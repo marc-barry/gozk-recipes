@@ -92,7 +92,7 @@ func main() {
 		Log.WithField("error", err).Errorf("Couldn't delete root node.")
 	}
 
-	err = session.Connection.Close()
+	err = session.Close()
 
 	if err == nil {
 		Log.Infof("Session closed.")

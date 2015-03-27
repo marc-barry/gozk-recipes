@@ -2,21 +2,26 @@ package session
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"launchpad.net/gozk"
 )
 
-type ZkSession struct {
-	Connection *zookeeper.Conn
-	Events     <-chan zookeeper.Event
-}
+var (
+	ErrZkSessionNotConnected       = fmt.Errorf("Unable to connect to ZooKeeper.")
+	ErrZkSessionTimeout            = fmt.Errorf("Session connection timeout expired.")
+	ErrZkSessionExpired            = fmt.Errorf("Session expired.")
+	ErrZkSessionEventChannelClosed = fmt.Errorf("Session event channel closed.")
+)
 
-func errNotConnected(err error) error {
-	if err != nil {
-		return fmt.Errorf("Unable to connect to ZooKeeper: %s", err.Error())
-	}
-	return fmt.Errorf("Unable to connect to ZooKeeper.")
+type ZkSession struct {
+	servers     string
+	dialTimeout time.Duration
+	recvTimeout time.Duration
+	Connection  *zookeeper.Conn
+	events      <-chan zookeeper.Event
+	mu          sync.Mutex
 }
 
 func NewZkSession(servers string, dialTimeout time.Duration, recvTimeout time.Duration) (*ZkSession, error) {
@@ -26,18 +31,83 @@ func NewZkSession(servers string, dialTimeout time.Duration, recvTimeout time.Du
 		return nil, err
 	}
 
+	s := &ZkSession{servers: servers, dialTimeout: dialTimeout, recvTimeout: recvTimeout, mu: sync.Mutex{}}
+
+	if err := s.establish(zkconn, zkevents); err != nil {
+		return nil, err
+	}
+
+	go s.manage()
+
+	return s, nil
+}
+
+func (s *ZkSession) establish(zkconn *zookeeper.Conn, zkevents <-chan zookeeper.Event) error {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
 	for {
 		select {
-		case event := <-zkevents:
+		case event, ok := <-zkevents:
+			if !ok {
+				return ErrZkSessionEventChannelClosed
+			}
+
+			if event.State == zookeeper.STATE_EXPIRED_SESSION {
+				_ = zkconn.Close()
+				return ErrZkSessionExpired
+			}
+
 			// Only the STATE_CONNECTED session event is valid when establishing a new session.
 			// Any other state is ignored.
 			if event.State == zookeeper.STATE_CONNECTED {
-				return &ZkSession{zkconn, zkevents}, nil
+				s.Connection = zkconn
+				s.events = zkevents
+				return nil
 			}
-		case <-time.After(dialTimeout):
-			return nil, errNotConnected(zkconn.Close())
+		case <-time.After(s.dialTimeout):
+			_ = zkconn.Close()
+			return ErrZkSessionTimeout
 		}
 	}
 
-	return nil, errNotConnected(zkconn.Close())
+	_ = zkconn.Close()
+	return ErrZkSessionNotConnected
+}
+
+func (s *ZkSession) Close() error {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.Connection.Close()
+}
+
+func (s *ZkSession) manage() {
+	for {
+		select {
+		case event, ok := <-s.events:
+			if !ok {
+				return
+			}
+
+			switch event.State {
+			case zookeeper.STATE_EXPIRED_SESSION:
+				zkconn, zkevents, err := zookeeper.Redial(s.servers, s.recvTimeout, s.Connection.ClientId())
+				if err != nil {
+					return
+				}
+				for {
+					if err := s.establish(zkconn, zkevents); err != nil {
+						if err == ErrZkSessionExpired {
+							continue
+						}
+						return
+					}
+					break
+				}
+			case zookeeper.STATE_CLOSED:
+				return
+			}
+		}
+	}
 }
