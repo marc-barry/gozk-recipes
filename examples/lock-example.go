@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/marc-barry/gozk-recipes/lock"
 	"github.com/marc-barry/gozk-recipes/session"
@@ -59,7 +60,7 @@ func main() {
 		}
 	}()
 
-	session, err := session.NewZkSession(*servers)
+	session, err := session.NewZkSession(*servers, time.Second*3, time.Second*3)
 
 	if err == nil {
 		Log.Infof("Session opened.")

@@ -7,28 +7,37 @@ import (
 	"launchpad.net/gozk"
 )
 
-var ErrNotConnected = fmt.Errorf("Unable to connect to ZooKeeper.")
-
 type ZkSession struct {
 	Connection *zookeeper.Conn
 	Events     <-chan zookeeper.Event
 }
 
-func NewZkSession(servers string) (*ZkSession, error) {
-	zkconn, zkevents, err := zookeeper.Dial(servers, 3*time.Second)
+func errNotConnected(err error) error {
+	if err != nil {
+		return fmt.Errorf("Unable to connect to ZooKeeper: %s", err.Error())
+	}
+	return fmt.Errorf("Unable to connect to ZooKeeper.")
+}
+
+func NewZkSession(servers string, dialTimeout time.Duration, recvTimeout time.Duration) (*ZkSession, error) {
+	zkconn, zkevents, err := zookeeper.Dial(servers, recvTimeout)
 
 	if err != nil {
 		return nil, err
 	}
 
-	select {
-	case event := <-zkevents:
-		if event.State != zookeeper.STATE_CONNECTED {
-			return nil, ErrNotConnected
+	for {
+		select {
+		case event := <-zkevents:
+			// Only the STATE_CONNECTED session event is valid when establishing a new session.
+			// Any other state is ignored.
+			if event.State == zookeeper.STATE_CONNECTED {
+				return &ZkSession{zkconn, zkevents}, nil
+			}
+		case <-time.After(dialTimeout):
+			return nil, errNotConnected(zkconn.Close())
 		}
-
-		return &ZkSession{zkconn, zkevents}, nil
-	case <-time.After(3 * time.Second):
-		return nil, ErrNotConnected
 	}
+
+	return nil, errNotConnected(zkconn.Close())
 }
