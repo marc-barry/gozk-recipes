@@ -31,7 +31,6 @@ type GlobalLock struct {
 	Session       *session.ZKSession
 	root          string
 	ephemeralPath string
-	locked        bool
 }
 
 func NewGlobalLock(session *session.ZKSession, root string) (*GlobalLock, error) {
@@ -43,7 +42,7 @@ func NewGlobalLock(session *session.ZKSession, root string) (*GlobalLock, error)
 			}
 		}
 	}
-	return &GlobalLock{session, root, "", false}, nil
+	return &GlobalLock{session, root, ""}, nil
 }
 
 func (g *GlobalLock) Destroy() error {
@@ -59,20 +58,11 @@ func (g *GlobalLock) Destroy() error {
 	return nil
 }
 
-func (g *GlobalLock) RetryLock() (err error) {
-	g.locked = false
-	g.ephemeralPath = ""
-	return g.Lock()
-}
-
 func (g *GlobalLock) Lock() (err error) {
-	// If already have the locked then immediately return.
-	if g.locked {
-		return nil
-	}
-
 	if len(g.ephemeralPath) > 0 {
-		return fmt.Errorf("Lock in unknown state. Ephemeral path %s exists but lock not obtained.", g.ephemeralPath)
+		if stat, _ := g.Session.Exists(g.ephemeralPath); stat != nil {
+			return nil
+		}
 	}
 
 	// (1)
@@ -96,7 +86,6 @@ func (g *GlobalLock) Lock() (err error) {
 
 		// (3)
 		if children[0] == path.Base(g.ephemeralPath) {
-			g.locked = true
 			return nil
 		}
 
@@ -126,7 +115,6 @@ func (g *GlobalLock) Unlock() error {
 		err := g.Session.Delete(g.ephemeralPath, -1)
 		if err == nil {
 			g.ephemeralPath = ""
-			g.locked = false
 		}
 	}
 	return err

@@ -132,7 +132,7 @@ func retryLock() {
 
 	Log.Infof("Retrying to lock.")
 
-	err := gl.RetryLock()
+	err := gl.Lock()
 	if err == nil {
 		locked = true
 		Log.Infof("Lock obtained.")
