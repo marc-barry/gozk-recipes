@@ -1,113 +1,137 @@
 package session
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"launchpad.net/gozk"
 )
 
-var (
-	ErrZkSessionNotConnected       = fmt.Errorf("Unable to connect to ZooKeeper.")
-	ErrZkSessionTimeout            = fmt.Errorf("Session connection timeout expired.")
-	ErrZkSessionExpired            = fmt.Errorf("Session expired.")
-	ErrZkSessionEventChannelClosed = fmt.Errorf("Session event channel closed.")
+type ZKSessionEvent uint
+
+const (
+	SessionConnected ZKSessionEvent = iota
+	SessionClosed
+	SessionDisconnected
+	SessionReconnected
+	SessionFailed
 )
 
-type ZkSession struct {
+type ZKSession struct {
 	servers     string
-	dialTimeout time.Duration
 	recvTimeout time.Duration
-	Connection  *zookeeper.Conn
+	conn        *zookeeper.Conn
+	clientId    *zookeeper.ClientId
 	events      <-chan zookeeper.Event
+	sEvents     chan ZKSessionEvent
 	mu          sync.Mutex
 }
 
-func NewZkSession(servers string, dialTimeout time.Duration, recvTimeout time.Duration) (*ZkSession, error) {
-	zkconn, zkevents, err := zookeeper.Dial(servers, recvTimeout)
-
+func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, <-chan ZKSessionEvent, error) {
+	conn, events, err := zookeeper.Dial(servers, recvTimeout)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	s := &ZkSession{servers: servers, dialTimeout: dialTimeout, recvTimeout: recvTimeout, mu: sync.Mutex{}}
-
-	if err := s.establish(zkconn, zkevents); err != nil {
-		return nil, err
+	s := &ZKSession{
+		servers:     servers,
+		recvTimeout: recvTimeout,
+		conn:        conn,
+		clientId:    conn.ClientId(),
+		events:      events,
+		sEvents:     make(chan ZKSessionEvent),
 	}
 
 	go s.manage()
 
-	return s, nil
+	return s, s.sEvents, nil
 }
 
-func (s *ZkSession) establish(zkconn *zookeeper.Conn, zkevents <-chan zookeeper.Event) error {
-	defer s.mu.Unlock()
-	s.mu.Lock()
-
+func (s *ZKSession) manage() {
+	prevConnected := false
 	for {
 		select {
-		case event, ok := <-zkevents:
-			if !ok {
-				return ErrZkSessionEventChannelClosed
-			}
-
-			if event.State == zookeeper.STATE_EXPIRED_SESSION {
-				_ = zkconn.Close()
-				return ErrZkSessionExpired
-			}
-
-			// Only the STATE_CONNECTED session event is valid when establishing a new session.
-			// Any other state is ignored.
-			if event.State == zookeeper.STATE_CONNECTED {
-				s.Connection = zkconn
-				s.events = zkevents
-				return nil
-			}
-		case <-time.After(s.dialTimeout):
-			_ = zkconn.Close()
-			return ErrZkSessionTimeout
-		}
-	}
-
-	_ = zkconn.Close()
-	return ErrZkSessionNotConnected
-}
-
-func (s *ZkSession) Close() error {
-	defer s.mu.Unlock()
-	s.mu.Lock()
-
-	return s.Connection.Close()
-}
-
-func (s *ZkSession) manage() {
-	for {
-		select {
-		case event, ok := <-s.events:
-			if !ok {
-				return
-			}
-
+		case event := <-s.events:
 			switch event.State {
 			case zookeeper.STATE_EXPIRED_SESSION:
-				zkconn, zkevents, err := zookeeper.Redial(s.servers, s.recvTimeout, s.Connection.ClientId())
+				conn, events, err := zookeeper.Redial(s.servers, s.recvTimeout, s.clientId)
+				if err == nil {
+					s.mu.Lock()
+					s.conn = conn
+					s.events = events
+					s.clientId = conn.ClientId()
+					s.mu.Unlock()
+				}
 				if err != nil {
+					s.sEvents <- SessionFailed
 					return
 				}
-				for {
-					if err := s.establish(zkconn, zkevents); err != nil {
-						if err == ErrZkSessionExpired {
-							continue
-						}
-						return
-					}
-					break
+
+			case zookeeper.STATE_AUTH_FAILED:
+				s.sEvents <- SessionFailed
+
+			case zookeeper.STATE_CONNECTING:
+				if prevConnected {
+					s.sEvents <- SessionDisconnected
 				}
+
+			case zookeeper.STATE_ASSOCIATING:
+				// No action to take, this is fine.
+
+			case zookeeper.STATE_CONNECTED:
+				if prevConnected {
+					s.sEvents <- SessionReconnected
+				}
+				if !prevConnected {
+					s.sEvents <- SessionConnected
+					prevConnected = true
+				}
+
 			case zookeeper.STATE_CLOSED:
-				return
+				s.sEvents <- SessionClosed
 			}
 		}
 	}
+}
+
+func (s *ZKSession) Children(path string) (children []string, stat *zookeeper.Stat, err error) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.Children(path)
+}
+
+func (s *ZKSession) Create(path, value string, flags int, aclv []zookeeper.ACL) (pathCreated string, err error) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.Create(path, value, flags, aclv)
+}
+
+func (s *ZKSession) Delete(path string, version int) (err error) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.Delete(path, version)
+}
+
+func (s *ZKSession) Exists(path string) (stat *zookeeper.Stat, err error) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.Exists(path)
+}
+
+func (s *ZKSession) ExistsW(path string) (stat *zookeeper.Stat, watch <-chan zookeeper.Event, err error) {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.ExistsW(path)
+}
+
+func (s *ZKSession) Close() error {
+	defer s.mu.Unlock()
+	s.mu.Lock()
+
+	return s.conn.Close()
 }

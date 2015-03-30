@@ -28,14 +28,41 @@ import (
 )
 
 type GlobalLock struct {
-	Session       *session.ZkSession
+	Session       *session.ZKSession
 	root          string
 	ephemeralPath string
 	locked        bool
 }
 
-func NewGlobalLock(session *session.ZkSession, root string) *GlobalLock {
-	return &GlobalLock{session, root, "", false}
+func NewGlobalLock(session *session.ZKSession, root string) (*GlobalLock, error) {
+	if stat, _ := session.Exists(root); stat == nil {
+		_, err := session.Create(root, "", 0, zookeeper.WorldACL(zookeeper.PERM_ALL))
+		if err != nil {
+			if stat, _ := session.Exists(root); stat == nil {
+				return nil, err
+			}
+		}
+	}
+	return &GlobalLock{session, root, "", false}, nil
+}
+
+func (g *GlobalLock) Destroy() error {
+	children, _, err := g.Session.Children(g.root)
+	if err != nil {
+		return err
+	}
+
+	if len(children) == 0 {
+		return g.Session.Delete(g.root, -1)
+	}
+
+	return nil
+}
+
+func (g *GlobalLock) RetryLock() (err error) {
+	g.locked = false
+	g.ephemeralPath = ""
+	return g.Lock()
 }
 
 func (g *GlobalLock) Lock() (err error) {
@@ -49,18 +76,16 @@ func (g *GlobalLock) Lock() (err error) {
 	}
 
 	// (1)
-	g.ephemeralPath, err = g.Session.Connection.Create(g.root+"/", "", zookeeper.EPHEMERAL|zookeeper.SEQUENCE, zookeeper.WorldACL(zookeeper.PERM_ALL))
+	g.ephemeralPath, err = g.Session.Create(g.root+"/", "", zookeeper.EPHEMERAL|zookeeper.SEQUENCE, zookeeper.WorldACL(zookeeper.PERM_ALL))
 	if err != nil {
 		return err
 	}
 
-	var (
-		children []string
-	)
+	var children []string
 
 	for {
 		// (2)
-		children, _, err = g.Session.Connection.Children(g.root)
+		children, _, err = g.Session.Children(g.root)
 
 		// The children nodes with be the sequence values --> 1, 2, 3....
 		sort.Strings(children)
@@ -79,7 +104,7 @@ func (g *GlobalLock) Lock() (err error) {
 
 		for {
 			// (4)
-			stat, w, err := g.Session.Connection.ExistsW(g.root + "/" + children[myIndex-1])
+			stat, w, err := g.Session.ExistsW(g.root + "/" + children[myIndex-1])
 			if err != nil {
 				return err
 			}
@@ -96,10 +121,13 @@ func (g *GlobalLock) Lock() (err error) {
 }
 
 func (g *GlobalLock) Unlock() error {
-	err := g.Session.Connection.Delete(g.ephemeralPath, -1)
-	if err == nil {
-		g.ephemeralPath = ""
-		g.locked = false
+	var err error = nil
+	if len(g.ephemeralPath) > 0 {
+		err := g.Session.Delete(g.ephemeralPath, -1)
+		if err == nil {
+			g.ephemeralPath = ""
+			g.locked = false
+		}
 	}
 	return err
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"launchpad.net/gozk"
 	"os"
 	"os/signal"
 	"sync"
@@ -28,9 +27,10 @@ var (
 	lockRoot = flag.String(LockRootFlag, "/gozk-recipes", "The path to the parent leader node.")
 
 	stopWg = sync.WaitGroup{}
-	lockMu = sync.Mutex{}
 
-	gl *lock.GlobalLock
+	gl       *lock.GlobalLock
+	locked   bool = false
+	lockedMu      = sync.Mutex{}
 )
 
 func withLogging(f func()) {
@@ -48,83 +48,126 @@ func withLogging(f func()) {
 func main() {
 	flag.Parse()
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		for sig := range c {
-			Log.WithField("signal", sig).Infof("Signalled. Shutting down.")
+	stopWg.Add(1)
 
-			stop()
-
-			stopWg.Done()
-		}
-	}()
-
-	session, err := session.NewZkSession(*servers, time.Second*3, time.Second*3)
-
-	if err == nil {
-		Log.Infof("Session opened.")
-	}
-
+	sess, events, err := session.NewZKSession(*servers, time.Second*3)
 	if err != nil {
 		Log.WithField("error", err).Fatalf("Couldn't establish a session with a ZooKeeper server.")
 	}
 
-	if stat, _ := session.Connection.Exists(*lockRoot); stat == nil {
-		_, err = session.Connection.Create(*lockRoot, "", 0, zookeeper.WorldACL(zookeeper.PERM_ALL))
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		var once sync.Once
 
-		if err != nil {
-			Log.WithField("error", err).Errorf("Couldn't create root node.")
+		for sig := range c {
+			Log.WithField("signal", sig).Infof("Signalled. Shutting down.")
+
+			once.Do(func() {
+				stop(sess)
+
+				stopWg.Done()
+			})
 		}
+	}()
+
+	event := <-events
+	if event != session.SessionConnected {
+		Log.WithField("event", event).Fatalf("Couldn't establish a session with a ZooKeeper server.")
 	}
 
-	stopWg.Add(1)
+	Log.Info("Session created.")
 
 	go withLogging(func() {
-		start(session)
+		start(sess, events)
 	})
 
 	stopWg.Wait()
-
-	err = session.Connection.Delete(*lockRoot, -1)
-
-	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't delete root node.")
-	}
-
-	err = session.Close()
-
-	if err == nil {
-		Log.Infof("Session closed.")
-	}
-
-	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't close session.")
-	}
 }
 
-func start(session *session.ZkSession) {
-	gl = lock.NewGlobalLock(session, *lockRoot)
+func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
+	var err error
 
-	err := gl.Lock()
-
-	if err == nil {
-		Log.Infof("Lock obtained.")
+	gl, err = lock.NewGlobalLock(sess, *lockRoot)
+	if err != nil {
+		Log.WithField("error", err).Errorf("Couldn't create lock.")
+		return
 	}
 
+	go func() {
+		getlock()
+		for {
+			select {
+			case event := <-events:
+				switch event {
+				case session.SessionDisconnected:
+					Log.WithField("event", "disconnected").Infof("The session was disconnected.")
+				case session.SessionReconnected:
+					Log.WithField("event", "reconnected").Infof("The session was reconnected.")
+					lockedMu.Lock()
+					Log.WithField("event", "reconnected").Infof("Previous lock state: %v", locked)
+					lockedMu.Unlock()
+
+					retryLock()
+				}
+			}
+		}
+	}()
+}
+
+func getlock() {
+	defer lockedMu.Unlock()
+	lockedMu.Lock()
+
+	Log.Infof("Trying to lock.")
+
+	err := gl.Lock()
+	if err == nil {
+		locked = true
+		Log.Infof("Lock obtained.")
+	}
 	if err != nil {
 		Log.WithField("error", err).Errorf("Couldn't obtain lock.")
 	}
 }
 
-func stop() {
-	err := gl.Unlock()
+func retryLock() {
+	defer lockedMu.Unlock()
+	lockedMu.Lock()
 
+	Log.Infof("Retrying to lock.")
+
+	err := gl.RetryLock()
 	if err == nil {
-		Log.Infof("Lock released.")
+		locked = true
+		Log.Infof("Lock obtained.")
+	}
+	if err != nil {
+		Log.WithField("error", err).Errorf("Couldn't obtain lock.")
+	}
+}
+
+func stop(sess *session.ZKSession) {
+	if gl != nil {
+		err := gl.Unlock()
+		if err == nil {
+			Log.Infof("Lock released.")
+		}
+		if err != nil {
+			Log.WithField("error", err).Errorf("Couldn't release lock.")
+		}
+
+		err = gl.Destroy()
+		if err != nil {
+			Log.WithField("error", err).Errorf("Couldn't destroy lock.")
+		}
 	}
 
+	err := sess.Close()
+	if err == nil {
+		Log.Infof("Session closed.")
+	}
 	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't release lock.")
+		Log.WithField("error", err).Errorf("Couldn't close session.")
 	}
 }
