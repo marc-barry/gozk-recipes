@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -9,9 +10,10 @@ import (
 
 type ZKSessionEvent uint
 
+var ErrZKSessionNotConnected = errors.New("unable to connect to ZooKeeper")
+
 const (
-	SessionConnected ZKSessionEvent = iota
-	SessionClosed
+	SessionClosed ZKSessionEvent = iota
 	SessionDisconnected
 	SessionReconnected
 	SessionFailed
@@ -21,7 +23,7 @@ type ZKSession struct {
 	servers     string
 	recvTimeout time.Duration
 	conn        *zookeeper.Conn
-	clientId    *zookeeper.ClientId
+	clientID    *zookeeper.ClientId
 	events      <-chan zookeeper.Event
 	sEvents     chan ZKSessionEvent
 	mu          sync.Mutex
@@ -37,9 +39,14 @@ func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, <-chan
 		servers:     servers,
 		recvTimeout: recvTimeout,
 		conn:        conn,
-		clientId:    conn.ClientId(),
+		clientID:    conn.ClientId(),
 		events:      events,
 		sEvents:     make(chan ZKSessionEvent),
+	}
+
+	event := <-events
+	if event.State != zookeeper.STATE_CONNECTED {
+		return nil, nil, ErrZKSessionNotConnected
 	}
 
 	go s.manage()
@@ -48,18 +55,17 @@ func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, <-chan
 }
 
 func (s *ZKSession) manage() {
-	prevConnected := false
 	for {
 		select {
 		case event := <-s.events:
 			switch event.State {
 			case zookeeper.STATE_EXPIRED_SESSION:
-				conn, events, err := zookeeper.Redial(s.servers, s.recvTimeout, s.clientId)
+				conn, events, err := zookeeper.Redial(s.servers, s.recvTimeout, s.clientID)
 				if err == nil {
 					s.mu.Lock()
 					s.conn = conn
 					s.events = events
-					s.clientId = conn.ClientId()
+					s.clientID = conn.ClientId()
 					s.mu.Unlock()
 				}
 				if err != nil {
@@ -71,21 +77,13 @@ func (s *ZKSession) manage() {
 				s.sEvents <- SessionFailed
 
 			case zookeeper.STATE_CONNECTING:
-				if prevConnected {
-					s.sEvents <- SessionDisconnected
-				}
+				s.sEvents <- SessionDisconnected
 
 			case zookeeper.STATE_ASSOCIATING:
 				// No action to take, this is fine.
 
 			case zookeeper.STATE_CONNECTED:
-				if prevConnected {
-					s.sEvents <- SessionReconnected
-				}
-				if !prevConnected {
-					s.sEvents <- SessionConnected
-					prevConnected = true
-				}
+				s.sEvents <- SessionReconnected
 
 			case zookeeper.STATE_CLOSED:
 				s.sEvents <- SessionClosed

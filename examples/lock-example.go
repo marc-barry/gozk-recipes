@@ -71,11 +71,6 @@ func main() {
 		}
 	}()
 
-	event := <-events
-	if event != session.SessionConnected {
-		Log.WithField("event", event).Fatalf("Couldn't establish a session with a ZooKeeper server.")
-	}
-
 	Log.Info("Session created.")
 
 	go withLogging(func() {
