@@ -50,7 +50,7 @@ func main() {
 
 	stopWg.Add(1)
 
-	sess, events, err := session.NewZKSession(*servers, time.Second*3)
+	sess, events, err := session.NewZKSession(*servers, time.Second*1)
 	if err != nil {
 		Log.WithField("error", err).Fatalf("Couldn't establish a session with a ZooKeeper server.")
 	}
@@ -65,8 +65,6 @@ func main() {
 
 			once.Do(func() {
 				stop(sess)
-
-				stopWg.Done()
 			})
 		}
 	}()
@@ -90,11 +88,13 @@ func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
 	}
 
 	go func() {
-		getlock()
+		getLock()
 		for {
 			select {
 			case event := <-events:
 				switch event {
+				case session.SessionClosed:
+					Log.WithField("event", "closed").Infof("The session was closed.")
 				case session.SessionDisconnected:
 					Log.WithField("event", "disconnected").Infof("The session was disconnected.")
 				case session.SessionReconnected:
@@ -102,35 +102,29 @@ func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
 					lockedMu.Lock()
 					Log.WithField("event", "reconnected").Infof("Previous lock state: %v", locked)
 					lockedMu.Unlock()
-
-					retryLock()
+					getLock()
+				case session.SessionExpiredReconnected:
+					Log.WithField("event", "expired reconnected").Infof("The session was expired and reconnected.")
+					lockedMu.Lock()
+					Log.WithField("event", "expired reconnected").Infof("Previous lock state: %v", locked)
+					lockedMu.Unlock()
+					getLock()
+				case session.SessionFailed:
+					Log.WithField("event", "failed session").Errorf("The session failed.")
+					stop(sess)
 				}
 			}
 		}
 	}()
 }
 
-func getlock() {
+func getLock() {
 	defer lockedMu.Unlock()
 	lockedMu.Lock()
 
 	Log.Infof("Trying to lock.")
 
-	err := gl.Lock()
-	if err == nil {
-		locked = true
-		Log.Infof("Lock obtained.")
-	}
-	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't obtain lock.")
-	}
-}
-
-func retryLock() {
-	defer lockedMu.Unlock()
-	lockedMu.Lock()
-
-	Log.Infof("Retrying to lock.")
+	locked = false
 
 	err := gl.Lock()
 	if err == nil {
@@ -143,6 +137,8 @@ func retryLock() {
 }
 
 func stop(sess *session.ZKSession) {
+	defer stopWg.Done()
+
 	if gl != nil {
 		err := gl.Unlock()
 		if err == nil {
