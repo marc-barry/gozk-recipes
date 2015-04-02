@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/marc-barry/gozk-recipes/lock"
-	"github.com/marc-barry/gozk-recipes/session"
+	"github.com/shopify/gozk-recipes/lock"
+	"github.com/shopify/gozk-recipes/session"
 
 	"github.com/Sirupsen/logrus"
 )
