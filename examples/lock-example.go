@@ -81,7 +81,7 @@ func main() {
 func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
 	var err error
 
-	gl, err = lock.NewGlobalLock(sess, *lockRoot)
+	gl, err = lock.NewGlobalLock(sess, *lockRoot, "")
 	if err != nil {
 		Log.WithField("error", err).Errorf("Couldn't create lock.")
 		return
