@@ -31,9 +31,10 @@ type GlobalLock struct {
 	Session       *session.ZKSession
 	root          string
 	ephemeralPath string
+	data          string
 }
 
-func NewGlobalLock(session *session.ZKSession, root string) (*GlobalLock, error) {
+func NewGlobalLock(session *session.ZKSession, root string, data string) (*GlobalLock, error) {
 	if stat, _ := session.Exists(root); stat == nil {
 		_, err := session.Create(root, "", 0, zookeeper.WorldACL(zookeeper.PERM_ALL))
 		if err != nil {
@@ -42,7 +43,7 @@ func NewGlobalLock(session *session.ZKSession, root string) (*GlobalLock, error)
 			}
 		}
 	}
-	return &GlobalLock{session, root, ""}, nil
+	return &GlobalLock{session, root, "", data}, nil
 }
 
 func (g *GlobalLock) Destroy() error {
@@ -66,7 +67,7 @@ func (g *GlobalLock) Lock() (err error) {
 	}
 
 	// (1)
-	g.ephemeralPath, err = g.Session.Create(g.root+"/", "", zookeeper.EPHEMERAL|zookeeper.SEQUENCE, zookeeper.WorldACL(zookeeper.PERM_ALL))
+	g.ephemeralPath, err = g.Session.Create(g.root+"/", g.data, zookeeper.EPHEMERAL|zookeeper.SEQUENCE, zookeeper.WorldACL(zookeeper.PERM_ALL))
 	if err != nil {
 		return err
 	}
