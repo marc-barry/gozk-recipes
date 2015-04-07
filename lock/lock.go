@@ -24,7 +24,7 @@ import (
 	"path"
 	"sort"
 
-	"github.com/shopify/gozk-recipes/session"
+	"github.com/Shopify/gozk-recipes/session"
 )
 
 type GlobalLock struct {
