@@ -104,7 +104,6 @@ func (s *ZKSession) manage() {
 				} else {
 					s.sEvents <- SessionReconnected
 				}
-
 			case zookeeper.STATE_CLOSED:
 				s.sEvents <- SessionClosed
 			}
@@ -112,26 +111,62 @@ func (s *ZKSession) manage() {
 	}
 }
 
-func (s *ZKSession) Children(path string) (children []string, stat *zookeeper.Stat, err error) {
+func (s *ZKSession) ACL(path string) ([]zookeeper.ACL, *zookeeper.Stat, error) {
+	return s.conn.ACL(path)
+}
+
+func (s *ZKSession) AddAuth(scheme, cert string) error {
+	return s.conn.AddAuth(scheme, cert)
+}
+
+func (s *ZKSession) Children(path string) ([]string, *zookeeper.Stat, error) {
 	return s.conn.Children(path)
 }
 
-func (s *ZKSession) Create(path, value string, flags int, aclv []zookeeper.ACL) (pathCreated string, err error) {
-	return s.conn.Create(path, value, flags, aclv)
+func (s *ZKSession) ChildrenW(path string) ([]string, *zookeeper.Stat, <-chan zookeeper.Event, error) {
+	return s.conn.ChildrenW(path)
 }
 
-func (s *ZKSession) Delete(path string, version int) (err error) {
-	return s.conn.Delete(path, version)
-}
-
-func (s *ZKSession) Exists(path string) (stat *zookeeper.Stat, err error) {
-	return s.conn.Exists(path)
-}
-
-func (s *ZKSession) ExistsW(path string) (stat *zookeeper.Stat, watch <-chan zookeeper.Event, err error) {
-	return s.conn.ExistsW(path)
+func (s *ZKSession) ClientId() *zookeeper.ClientId {
+	return s.conn.ClientId()
 }
 
 func (s *ZKSession) Close() error {
 	return s.conn.Close()
+}
+
+func (s *ZKSession) Create(path string, value string, flags int, aclv []zookeeper.ACL) (string, error) {
+	return s.conn.Create(path, value, flags, aclv)
+}
+
+func (s *ZKSession) Delete(path string, version int) error {
+	return s.conn.Delete(path, version)
+}
+
+func (s *ZKSession) Exists(path string) (*zookeeper.Stat, error) {
+	return s.conn.Exists(path)
+}
+
+func (s *ZKSession) ExistsW(path string) (*zookeeper.Stat, <-chan zookeeper.Event, error) {
+	return s.conn.ExistsW(path)
+}
+
+func (s *ZKSession) Get(path string) (string, *zookeeper.Stat, error) {
+	return s.conn.Get(path)
+}
+
+func (s *ZKSession) GetW(path string) (string, *zookeeper.Stat, <-chan zookeeper.Event, error) {
+	return s.conn.GetW(path)
+}
+
+func (s *ZKSession) Set(path string, value string, version int) (*zookeeper.Stat, error) {
+	return s.conn.Set(path, value, version)
+}
+
+func (s *ZKSession) RetryChange(path string, flags int, acl []zookeeper.ACL, changeFunc zookeeper.ChangeFunc) error {
+	return s.conn.RetryChange(path, flags, acl, changeFunc)
+}
+
+func (s *ZKSession) SetACL(path string, aclv []zookeeper.ACL, version int) error {
+	return s.conn.SetACL(path, aclv, version)
 }
