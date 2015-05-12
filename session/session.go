@@ -39,32 +39,43 @@ type ZKSession struct {
 	conn        *zookeeper.Conn
 	clientID    *zookeeper.ClientId
 	events      <-chan zookeeper.Event
-	sEvents     chan ZKSessionEvent
 	mu          sync.Mutex
+
+	subscriptions []chan<- ZKSessionEvent
 }
 
-func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, <-chan ZKSessionEvent, error) {
+func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, error) {
 	conn, events, err := zookeeper.Dial(servers, recvTimeout)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	s := &ZKSession{
-		servers:     servers,
-		recvTimeout: recvTimeout,
-		conn:        conn,
-		clientID:    conn.ClientId(),
-		events:      events,
-		sEvents:     make(chan ZKSessionEvent),
+		servers:       servers,
+		recvTimeout:   recvTimeout,
+		conn:          conn,
+		clientID:      conn.ClientId(),
+		events:        events,
+		subscriptions: make([]chan<- ZKSessionEvent, 0),
 	}
 
 	if (<-events).State != zookeeper.STATE_CONNECTED {
-		return nil, nil, ErrZKSessionNotConnected
+		return nil, ErrZKSessionNotConnected
 	}
 
 	go s.manage()
 
-	return s, s.sEvents, nil
+	return s, nil
+}
+
+func (s *ZKSession) Subscribe(subscription chan<- ZKSessionEvent) {
+	s.subscriptions = append(s.subscriptions, subscription)
+}
+
+func (s *ZKSession) notifySubscribers(event ZKSessionEvent) {
+	for _, subscriber := range s.subscriptions {
+		subscriber <- event
+	}
 }
 
 func (s *ZKSession) manage() {
@@ -84,28 +95,28 @@ func (s *ZKSession) manage() {
 					s.mu.Unlock()
 				}
 				if err != nil {
-					s.sEvents <- SessionFailed
+					s.notifySubscribers(SessionFailed)
 					return
 				}
 
 			case zookeeper.STATE_AUTH_FAILED:
-				s.sEvents <- SessionFailed
+				s.notifySubscribers(SessionFailed)
 
 			case zookeeper.STATE_CONNECTING:
-				s.sEvents <- SessionDisconnected
+				s.notifySubscribers(SessionDisconnected)
 
 			case zookeeper.STATE_ASSOCIATING:
 				// No action to take, this is fine.
 
 			case zookeeper.STATE_CONNECTED:
 				if expired {
-					s.sEvents <- SessionExpiredReconnected
+					s.notifySubscribers(SessionExpiredReconnected)
 					expired = false
 				} else {
-					s.sEvents <- SessionReconnected
+					s.notifySubscribers(SessionReconnected)
 				}
 			case zookeeper.STATE_CLOSED:
-				s.sEvents <- SessionClosed
+				s.notifySubscribers(SessionClosed)
 			}
 		}
 	}
