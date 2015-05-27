@@ -69,10 +69,14 @@ func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, error)
 }
 
 func (s *ZKSession) Subscribe(subscription chan<- ZKSessionEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.subscriptions = append(s.subscriptions, subscription)
 }
 
 func (s *ZKSession) notifySubscribers(event ZKSessionEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, subscriber := range s.subscriptions {
 		subscriber <- event
 	}
