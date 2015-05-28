@@ -10,6 +10,11 @@ import (
 
 type ZKSessionEvent uint
 
+// NewZKSession is passed a logger to log ZK events.
+type stdLogger interface {
+	Printf(format string, v ...interface{})
+}
+
 // ErrZKSessionNotConnected is analogous to the SessionFailed event, but returned as an error from NewZKSession on initialization.
 var ErrZKSessionNotConnected = errors.New("unable to connect to ZooKeeper")
 
@@ -42,9 +47,10 @@ type ZKSession struct {
 	mu          sync.Mutex
 
 	subscriptions []chan<- ZKSessionEvent
+	log           stdLogger
 }
 
-func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, error) {
+func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (*ZKSession, error) {
 	conn, events, err := zookeeper.Dial(servers, recvTimeout)
 	if err != nil {
 		return nil, err
@@ -57,6 +63,7 @@ func NewZKSession(servers string, recvTimeout time.Duration) (*ZKSession, error)
 		clientID:      conn.ClientId(),
 		events:        events,
 		subscriptions: make([]chan<- ZKSessionEvent, 0),
+		log:           logger,
 	}
 
 	if (<-events).State != zookeeper.STATE_CONNECTED {
@@ -100,14 +107,18 @@ func (s *ZKSession) manage() {
 				}
 				if err != nil {
 					s.notifySubscribers(SessionFailed)
+					s.log.Printf("gozk-recipes/session.SessionFailed: %s, session terminated", err.Error())
 					return
 				}
 
 			case zookeeper.STATE_AUTH_FAILED:
 				s.notifySubscribers(SessionFailed)
+				s.log.Printf("gozk-recipes/session.SessionFailed: zookeeper.STATE_AUTH_FAILURE, session terminated")
+				return
 
 			case zookeeper.STATE_CONNECTING:
 				s.notifySubscribers(SessionDisconnected)
+				s.log.Printf("gozk-recipes/session.SessionDisconnected: attempting to reconnect")
 
 			case zookeeper.STATE_ASSOCIATING:
 				// No action to take, this is fine.
@@ -115,12 +126,16 @@ func (s *ZKSession) manage() {
 			case zookeeper.STATE_CONNECTED:
 				if expired {
 					s.notifySubscribers(SessionExpiredReconnected)
+					s.log.Printf("gozk-recipes/session.SessionExpiredReconnected: all ephemeral nodes purged")
 					expired = false
 				} else {
 					s.notifySubscribers(SessionReconnected)
+					s.log.Printf("gozk-recipes/session.SessionReconnected: reconnected before timed out")
 				}
 			case zookeeper.STATE_CLOSED:
 				s.notifySubscribers(SessionClosed)
+				s.log.Printf("gozk-recipes/session.SessionClosed: normally caused by call to Close(), session terminated")
+				return
 			}
 		}
 	}
