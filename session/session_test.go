@@ -1,9 +1,10 @@
 package session
 
 import (
-	toxiproxy "github.com/Shopify/toxiproxy/client"
 	"testing"
 	"time"
+
+	toxiproxy "github.com/Shopify/toxiproxy/client"
 )
 
 func TestReceiveEventWhenSubscribing(t *testing.T) {
@@ -16,7 +17,7 @@ func TestReceiveEventWhenSubscribing(t *testing.T) {
 	}
 	defer proxy.Delete()
 
-	store, err := NewZKSession("localhost:27445", 200*time.Millisecond)
+	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
