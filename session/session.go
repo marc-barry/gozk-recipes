@@ -15,6 +15,11 @@ type stdLogger interface {
 	Printf(format string, v ...interface{})
 }
 
+// nullLogger is used when a nil interface is given
+type nullLogger struct{}
+
+func (l *nullLogger) Printf(format string, v ...interface{}) {}
+
 // ErrZKSessionNotConnected is analogous to the SessionFailed event, but returned as an error from NewZKSession on initialization.
 var ErrZKSessionNotConnected = errors.New("unable to connect to ZooKeeper")
 
@@ -54,6 +59,10 @@ func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (
 	conn, events, err := zookeeper.Dial(servers, recvTimeout)
 	if err != nil {
 		return nil, err
+	}
+
+	if logger == nil {
+		logger = &nullLogger{}
 	}
 
 	s := &ZKSession{

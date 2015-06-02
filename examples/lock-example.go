@@ -50,7 +50,7 @@ func main() {
 
 	stopWg.Add(1)
 
-	sess, events, err := session.NewZKSession(*servers, time.Second*1)
+	sess, err := session.NewZKSession(*servers, time.Second*1, Log)
 	if err != nil {
 		Log.WithField("error", err).Fatalf("Couldn't establish a session with a ZooKeeper server.")
 	}
@@ -72,13 +72,13 @@ func main() {
 	Log.Info("Session created.")
 
 	go withLogging(func() {
-		start(sess, events)
+		start(sess)
 	})
 
 	stopWg.Wait()
 }
 
-func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
+func start(sess *session.ZKSession) {
 	var err error
 
 	gl, err = lock.NewGlobalLock(sess, *lockRoot, "")
@@ -86,6 +86,9 @@ func start(sess *session.ZKSession, events <-chan session.ZKSessionEvent) {
 		Log.WithField("error", err).Errorf("Couldn't create lock.")
 		return
 	}
+
+	events := make(chan session.ZKSessionEvent)
+	sess.Subscribe(events)
 
 	go func() {
 		getLock()
