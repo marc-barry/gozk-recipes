@@ -20,10 +20,10 @@ Here are a few things of note:
 
 import (
 	"fmt"
-	"launchpad.net/gozk"
 	"path"
 	"sort"
 
+	"github.com/Shopify/gozk"
 	"github.com/Shopify/gozk-recipes/session"
 )
 

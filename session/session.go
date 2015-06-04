@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"launchpad.net/gozk"
+	"github.com/Shopify/gozk"
 )
 
 type ZKSessionEvent uint
