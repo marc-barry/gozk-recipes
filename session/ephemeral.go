@@ -29,11 +29,12 @@ func (z *ZKSession) CreateAndMaintainEphemeral(path, data string, dead chan<- er
 	z.Subscribe(evs)
 
 	go func() { dead <- maintainEphemeral(evs, doCreate) }()
+	return nil
 }
 
 func maintainEphemeral(evs <-chan ZKSessionEvent, doCreate func() error) error {
 	for ev := range evs {
-		switch ev.State {
+		switch ev {
 		case SessionClosed:
 			// Someone called Close() on the session; we are presumably expected to
 			// shut down gracefully. The node will already be removed by the
@@ -54,4 +55,5 @@ func maintainEphemeral(evs <-chan ZKSessionEvent, doCreate func() error) error {
 			}
 		}
 	}
+	return nil // channel was closed, probably on purpose
 }
