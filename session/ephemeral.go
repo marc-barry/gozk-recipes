@@ -2,9 +2,14 @@ package session
 
 import (
 	"errors"
+	"time"
 
 	"github.com/Shopify/gozk"
 )
+
+var ErrZKSessionDisconnected = errors.New("connection to ZooKeeper was lost")
+
+var maxWait = 20 * time.Second
 
 // CreateAndMaintainEphemeral creates an ephemeral znode with the given
 // path+data, and signals the provided channel when it has stopped. This
@@ -33,27 +38,50 @@ func (z *ZKSession) CreateAndMaintainEphemeral(path, data string, dead chan<- er
 }
 
 func maintainEphemeral(evs <-chan ZKSessionEvent, doCreate func() error) error {
-	for ev := range evs {
-		switch ev {
-		case SessionClosed:
-			// Someone called Close() on the session; we are presumably expected to
-			// shut down gracefully. The node will already be removed by the
-			// connection teardown.
-			return nil
-		case SessionFailed:
-			return errors.New("the session was terminated")
-		case SessionDisconnected:
-			// nothing to do yet. Eventually we hope to receive one of the
-			// Reconnected events
-		case SessionReconnected:
-			// All is fine; we reconnected before our ephemeral node expired
-		case SessionExpiredReconnected:
-			// We reconnected, but it took a while, and we must recreate our
-			// ephemeral node.
-			if err := doCreate(); err != nil {
-				return err
+	broken := make(chan struct{})
+	reconnected := make(chan struct{}, 1)
+	for {
+		select {
+		case <-broken:
+			return ErrZKSessionDisconnected
+		case ev := <-evs:
+			switch ev {
+			case SessionClosed:
+				// Someone called Close() on the session; we are presumably expected to
+				// shut down gracefully. The node will already be removed by the
+				// connection teardown.
+				return nil
+			case SessionFailed:
+				return ErrZKSessionDisconnected
+			case SessionDisconnected:
+				// If the connection isn't re-established before 20 seconds have
+				// elapsed, freak out.
+				go func() {
+					select {
+					case <-reconnected:
+					case <-time.After(maxWait):
+						broken <- struct{}{}
+					}
+				}()
+			case SessionReconnected:
+				// All is fine; we reconnected before our ephemeral node expired.
+				// Stop the disconnect countdown.
+				select {
+				case reconnected <- struct{}{}:
+				default:
+				}
+			case SessionExpiredReconnected:
+				// We reconnected, but it took a while, and we must recreate our
+				// ephemeral node.
+				// Stop the disconnect countdown first.
+				select {
+				case reconnected <- struct{}{}:
+				default:
+				}
+				if err := doCreate(); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	return nil // channel was closed, probably on purpose
 }
