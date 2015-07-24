@@ -1,13 +1,14 @@
-package session
+package ephemeral
 
 import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/gozk-recipes/session"
 	toxiproxy "github.com/Shopify/toxiproxy/client"
 )
 
-func TestCreateAndMaintainEphemeral(t *testing.T) {
+func TestCreateAndMaintain(t *testing.T) {
 	client := toxiproxy.NewClient("http://localhost:8474")
 	proxy := client.NewProxy(&toxiproxy.Proxy{Name: "gozk_test_zookeeper", Listen: "localhost:27445", Upstream: "localhost:2181", Enabled: true})
 
@@ -17,18 +18,18 @@ func TestCreateAndMaintainEphemeral(t *testing.T) {
 	}
 	defer proxy.Delete()
 
-	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	store, err := session.NewZKSession("localhost:27445", 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
 	defer store.Close()
 
 	dead := make(chan error)
-	if err := store.CreateAndMaintainEphemeral("/eph", "whatever", dead); err != nil {
+	if err := CreateAndMaintain(store, "/eph", "whatever", dead); err != nil {
 		t.Error("CreateAndMaintainEphemeral failed: ", err)
 	}
 
-	events := make(chan ZKSessionEvent)
+	events := make(chan session.ZKSessionEvent)
 	store.Subscribe(events)
 
 	go func() {
@@ -72,18 +73,18 @@ func TestCreateAndMaintainEphemeral(t *testing.T) {
 
 	}()
 
-	assertEvent(t, events, SessionDisconnected)
-	assertEvent(t, events, SessionReconnected)
-	assertEvent(t, events, SessionDisconnected)
-	assertEvent(t, events, SessionExpiredReconnected)
-	assertEvent(t, events, SessionDisconnected)
+	assertEvent(t, events, session.SessionDisconnected)
+	assertEvent(t, events, session.SessionReconnected)
+	assertEvent(t, events, session.SessionDisconnected)
+	assertEvent(t, events, session.SessionExpiredReconnected)
+	assertEvent(t, events, session.SessionDisconnected)
 
 	println("waiting 20 seconds for maintainEphemeral to time out waiting for connection re-establishment")
 	start := time.Now()
 
 	select {
 	case err := <-dead:
-		if err != ErrZKSessionDisconnected {
+		if err != session.ErrZKSessionDisconnected {
 			t.Error("Expected ErrZKSessionDisconnected, but got:", err)
 		}
 		elapsed := time.Since(start)
@@ -95,7 +96,7 @@ func TestCreateAndMaintainEphemeral(t *testing.T) {
 	}
 }
 
-func assertEvent(t *testing.T, events chan ZKSessionEvent, exp ZKSessionEvent) {
+func assertEvent(t *testing.T, events chan session.ZKSessionEvent, exp session.ZKSessionEvent) {
 	select {
 	case act := <-events:
 		if act != exp {
@@ -106,7 +107,7 @@ func assertEvent(t *testing.T, events chan ZKSessionEvent, exp ZKSessionEvent) {
 	}
 }
 
-func assertZnodePresence(t *testing.T, store *ZKSession, path string, presence bool) {
+func assertZnodePresence(t *testing.T, store *session.ZKSession, path string, presence bool) {
 	_, _, err := store.Get(path)
 
 	if presence {
