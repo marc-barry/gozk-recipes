@@ -23,6 +23,10 @@ func (l *nullLogger) Printf(format string, v ...interface{}) {}
 // ErrZKSessionNotConnected is analogous to the SessionFailed event, but returned as an error from NewZKSession on initialization.
 var ErrZKSessionNotConnected = errors.New("unable to connect to ZooKeeper")
 
+// ErrZKSessionDisconnected indicates the session *was* connected, but has
+// become disconnected in a way deemed unrecoverable.
+var ErrZKSessionDisconnected = errors.New("connection to ZooKeeper was lost")
+
 const (
 	// SessionClosed is normally only returned as a direct result of calling Close() on the ZKSession object. It is a
 	// terminal state; the connection will not be re-established.
@@ -75,7 +79,13 @@ func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (
 		log:           logger,
 	}
 
-	if (<-events).State != zookeeper.STATE_CONNECTED {
+	var event zookeeper.Event
+	select {
+	case event = <-events:
+		if event.State != zookeeper.STATE_CONNECTED {
+			return nil, ErrZKSessionNotConnected
+		}
+	case <-time.After(5 * time.Second):
 		return nil, ErrZKSessionNotConnected
 	}
 

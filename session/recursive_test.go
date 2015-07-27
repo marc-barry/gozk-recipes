@@ -60,7 +60,7 @@ func withTestStore(t *testing.T, f func(*ZKSession)) {
 	}
 	defer os.RemoveAll(runDir)
 
-	server, err := zookeeper.CreateServer(22447, runDir, "/usr/lib/zookeeper")
+	server, err := zookeeper.CreateServer(22447, runDir, "")
 	if err != nil {
 		t.Error("Failed to create zookeeper server: ", err)
 	}

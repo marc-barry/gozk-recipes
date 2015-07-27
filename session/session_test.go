@@ -13,7 +13,7 @@ func TestReceiveEventWhenSubscribing(t *testing.T) {
 
 	err := proxy.Create()
 	if err != nil {
-		t.Error("Failed to create proxy: ", err)
+		t.Fatal("Couldn't create proxy. Is toxiproxy running? Error: ", err)
 	}
 	defer proxy.Delete()
 
