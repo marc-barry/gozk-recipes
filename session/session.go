@@ -59,8 +59,24 @@ type ZKSession struct {
 	log           stdLogger
 }
 
+func ResumeZKSession(servers string, recvTimeout time.Duration, logger stdLogger, clientid *zookeeper.ClientId) (*ZKSession, error) {
+	return newZKSession(servers, recvTimeout, logger, clientid)
+}
+
 func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (*ZKSession, error) {
-	conn, events, err := zookeeper.Dial(servers, recvTimeout)
+	return newZKSession(servers, recvTimeout, logger, nil)
+}
+
+func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, clientid *zookeeper.ClientId) (*ZKSession, error) {
+	var conn *zookeeper.Conn
+	var events <-chan zookeeper.Event
+	var err error
+
+	if clientid == nil {
+		conn, events, err = zookeeper.Dial(servers, recvTimeout)
+	} else {
+		conn, events, err = zookeeper.Redial(servers, recvTimeout, clientid)
+	}
 	if err != nil {
 		return nil, err
 	}
