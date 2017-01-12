@@ -17,6 +17,20 @@ func CreateProxy(t *testing.T) (*toxiproxy.Proxy){
 	return proxy
 }
 
+func invalidClientId(t *testing.T) (*zookeeper.ClientId){
+	clientId := make([]byte, 24)
+	for i := 0; i < 24; i++ {
+		clientId[i] = 9
+	}
+
+	invalidClientId, err := zookeeper.LoadClientId(clientId)
+	if err != nil {
+		t.Error("Error loading clientId: ", err)
+	}
+
+	return invalidClientId
+}
+
 func TestReceiveEventWhenSubscribing(t *testing.T) {
 	proxy := CreateProxy(t)
 	defer proxy.Delete()
@@ -109,18 +123,40 @@ func TestResumeZKSessionFailsWithInvalidClientId(t *testing.T) {
 	proxy := CreateProxy(t)
 	defer proxy.Delete()
 
-	clientId := make([]byte, 24)
-	for i := 0; i < 24; i++ {
-		clientId[i] = 9
-	}
+	invalidClientId := invalidClientId(t)
 
-	invalidClientId, err := zookeeper.LoadClientId(clientId)
-	if err != nil {
-		t.Error("Error loading clientId: ", err)
+	_, err := ResumeZKSession("localhost:27445", 200*time.Millisecond, nil, invalidClientId)
+	if err == nil {
+		t.Error("Resumed session with Zookeeper using incorrect clientId.")
 	}
+}
+
+func TestResumeZKSessionWithInvalidClientIdDoesNotDisconnectExistingSession(t *testing.T) {
+	proxy := CreateProxy(t)
+	defer proxy.Delete()
+
+	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	if err != nil {
+		t.Error("Failed to connect to Zookeeper: ", err)
+	}
+	defer store.Close()
+
+	events := make(chan ZKSessionEvent)
+	store.Subscribe(events)
+
+	invalidClientId := invalidClientId(t)
 
 	_, err = ResumeZKSession("localhost:27445", 200*time.Millisecond, nil, invalidClientId)
 	if err == nil {
 		t.Error("Resumed session with Zookeeper using incorrect clientId.")
+	}
+
+	select {
+	case event := <-events:
+		if event == SessionDisconnected {
+			t.Error("Existing session was disconnected by ResumeZKSession with invalid cliendId: ", event)
+		}
+	default:
+		t.Log("Existing session was not disconnected by ResumeZKSession with invalid clientId")
 	}
 }
