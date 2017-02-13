@@ -98,7 +98,7 @@ func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, c
 	var event zookeeper.Event
 	select {
 	case event = <-events:
-		if event.State != zookeeper.STATE_CONNECTED {
+		if event.State == zookeeper.STATE_AUTH_FAILED || event.State == zookeeper.STATE_EXPIRED_SESSION {
 			return nil, ErrZKSessionNotConnected
 		}
 	case <-time.After(5 * time.Second):
