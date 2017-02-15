@@ -95,30 +95,32 @@ func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, c
 		log:           logger,
 	}
 
-	var event zookeeper.Event
-
-	Loop:
-		for {
-			select {
-			case event = <-events:
-				switch event.State {
-					case zookeeper.STATE_AUTH_FAILED:
-						return nil, ErrZKSessionNotConnected
-					case zookeeper.STATE_EXPIRED_SESSION:
-						return nil, ErrZKSessionNotConnected
-					case zookeeper.STATE_CLOSED:
-						return nil, ErrZKSessionNotConnected
-					case zookeeper.STATE_CONNECTED:
-						break Loop
-				}
-			case <-time.After(5 * time.Second):
-				return nil, ErrZKSessionNotConnected
-			}
-		}
+	err = waitForConnection(events)
+	if err != nil {
+		return nil, err
+	}
 
 	go s.manage()
 
 	return s, nil
+}
+
+func waitForConnection(events <-chan zookeeper.Event) error {
+  for {
+    select {
+    case event := <-events:
+      switch event.State {
+        case zookeeper.STATE_AUTH_FAILED, zookeeper.STATE_EXPIRED_SESSION, zookeeper.STATE_CLOSED:
+          return ErrZKSessionNotConnected
+        case zookeeper.STATE_CONNECTED:
+          return nil
+      }
+    case <-time.After(5 * time.Second):
+      return ErrZKSessionNotConnected
+    }
+  }
+  // We should not reach this state
+  return ErrZKSessionNotConnected
 }
 
 func (s *ZKSession) Subscribe(subscription chan<- ZKSessionEvent) {
