@@ -1,0 +1,32 @@
+name: gozk-recipes
+
+up:
+  - homebrew:
+    - zookeeper
+  - go: 1.7.5
+  - railgun
+
+env:
+  CGO_CFLAGS: '-I/usr/local/include/zookeeper'
+  CGO_LDFLAGS: '-L/usr/local/lib'
+  TOXIPROXY_HOST: 192.168.64.87
+  TOXIPROXY_URL: http://192.168.64.87:8474
+  ZOOKEEPERS: 192.168.64.87:2181
+
+commands:
+  test: script/test
+
+railgun:
+  image: dev:railgun-common-services-0.2.x
+  services:
+    toxiproxy: 8474
+    zookeeper: 2181
+  ip_address: 192.168.64.87
+  memory: 2G
+  cores: 2
+  disk: 2G
+  hostnames:
+    - gozk-recipes.myshopify.io
+
+packages:
+  - git@github.com:Shopify/dev-shopify.git

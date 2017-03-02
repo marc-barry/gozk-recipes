@@ -1,14 +1,13 @@
 package session
 
 import (
-	"io/ioutil"
-	"os"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/Shopify/gozk"
+	"github.com/Shopify/gozk-recipes/test"
 )
 
 func AssertEqual(t *testing.T, expected, actual interface{}) {
@@ -54,27 +53,15 @@ func AssertNodeExists(t *testing.T, session *ZKSession, path string) {
 }
 
 func withTestStore(t *testing.T, f func(*ZKSession)) {
-	runDir, err := ioutil.TempDir("", "zk")
-	if err != nil {
-		t.Error("Failed to create zookeeper run dir: ", err)
-	}
-	defer os.RemoveAll(runDir)
-
-	server, err := zookeeper.CreateServer(22447, runDir, "")
-	if err != nil {
-		t.Error("Failed to create zookeeper server: ", err)
-	}
-	defer server.Stop()
-
-	if err := server.Start(); err != nil {
-		t.Error("Failed to start zookeeper server: ", err)
-	}
-
-	store, err := NewZKSession("localhost:22447", 200*time.Millisecond, nil)
+	store, err := NewZKSession(test.GetZooKeepers(t), 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
 	defer store.Close()
+
+	// Scrappy way of insuring that the /test node (which may have already existed) has been deleted with each test
+	// run
+	store.DeleteRecursive("/test")
 
 	f(store)
 }
