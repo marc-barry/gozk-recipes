@@ -5,19 +5,10 @@ import (
 	"time"
 
 	zookeeper "github.com/Shopify/gozk"
-	toxiproxy "github.com/Shopify/toxiproxy/client"
+	"github.com/Shopify/gozk-recipes/test"
 )
 
-func CreateProxy(t *testing.T) (*toxiproxy.Proxy){
-	client := toxiproxy.NewClient("http://localhost:8474")
-	proxy, err := client.CreateProxy("gozk_test_zookeeper", "localhost:27445", "localhost:2181")
-	if err != nil {
-		t.Fatal("Couldn't create proxy. Is toxiproxy running? Error: ", err)
-	}
-	return proxy
-}
-
-func invalidClientId(t *testing.T) (*zookeeper.ClientId){
+func invalidClientId(t *testing.T) *zookeeper.ClientId {
 	clientId := make([]byte, 24)
 	for i := 0; i < 24; i++ {
 		clientId[i] = 9
@@ -32,10 +23,10 @@ func invalidClientId(t *testing.T) (*zookeeper.ClientId){
 }
 
 func TestReceiveEventWhenSubscribing(t *testing.T) {
-	proxy := CreateProxy(t)
+	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
-	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	store, err := NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
@@ -47,7 +38,7 @@ func TestReceiveEventWhenSubscribing(t *testing.T) {
 	go func() {
 		err := proxy.Disable()
 		if err != nil {
-			t.Error("Failed to delete proxy: ", err)
+			t.Error("Failed to disable proxy: ", err)
 		}
 
 		_, _, err = store.Children("/")
@@ -57,7 +48,7 @@ func TestReceiveEventWhenSubscribing(t *testing.T) {
 
 		err = proxy.Enable()
 		if err != nil {
-			t.Error("Failed to create proxy: ", err)
+			t.Error("Failed to enable proxy: ", err)
 		}
 	}()
 
@@ -81,10 +72,10 @@ func TestReceiveEventWhenSubscribing(t *testing.T) {
 }
 
 func TestResumeZKSessionWithValidSession(t *testing.T) {
-	proxy := CreateProxy(t)
+	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
-	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	store, err := NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
@@ -103,7 +94,7 @@ func TestResumeZKSessionWithValidSession(t *testing.T) {
 	}
 
 	//ResumeZKSession is expected to automatically close any previously existing sessions.
-	resumeStore, err := ResumeZKSession("localhost:27445", 200*time.Millisecond, nil, clientId)
+	resumeStore, err := ResumeZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil, clientId)
 	if err != nil {
 		t.Error("Failed to resume session with Zookeeper: ", err)
 	}
@@ -120,22 +111,22 @@ func TestResumeZKSessionWithValidSession(t *testing.T) {
 }
 
 func TestResumeZKSessionFailsWithInvalidClientId(t *testing.T) {
-	proxy := CreateProxy(t)
+	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
 	invalidClientId := invalidClientId(t)
 
-	_, err := ResumeZKSession("localhost:27445", 200*time.Millisecond, nil, invalidClientId)
+	_, err := ResumeZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil, invalidClientId)
 	if err == nil {
 		t.Error("Resumed session with Zookeeper using incorrect clientId.")
 	}
 }
 
 func TestResumeZKSessionWithInvalidClientIdDoesNotDisconnectExistingSession(t *testing.T) {
-	proxy := CreateProxy(t)
+	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
-	store, err := NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	store, err := NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
@@ -146,7 +137,7 @@ func TestResumeZKSessionWithInvalidClientIdDoesNotDisconnectExistingSession(t *t
 
 	invalidClientId := invalidClientId(t)
 
-	_, err = ResumeZKSession("localhost:27445", 200*time.Millisecond, nil, invalidClientId)
+	_, err = ResumeZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil, invalidClientId)
 	if err == nil {
 		t.Error("Resumed session with Zookeeper using incorrect clientId.")
 	}

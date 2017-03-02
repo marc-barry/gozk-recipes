@@ -5,20 +5,19 @@ import (
 	"time"
 
 	"github.com/Shopify/gozk-recipes/session"
-	toxiproxy "github.com/Shopify/toxiproxy/client"
+	"github.com/Shopify/gozk-recipes/test"
 )
 
 func TestCreateAndMaintain(t *testing.T) {
-	client := toxiproxy.NewClient("http://localhost:8474")
-	proxy := client.NewProxy(&toxiproxy.Proxy{Name: "gozk_test_zookeeper", Listen: "localhost:27445", Upstream: "localhost:2181", Enabled: true})
-
-	err := proxy.Create()
-	if err != nil {
-		t.Fatal("Couldn't create proxy. Is toxiproxy running? Error: ", err)
-	}
+	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
-	store, err := session.NewZKSession("localhost:27445", 200*time.Millisecond, nil)
+	err := proxy.Enable()
+	if err != nil {
+		t.Fatal("Couldn't enable proxy. Is toxiproxy running? Error: ", err)
+	}
+
+	store, err := session.NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil)
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}
@@ -33,29 +32,32 @@ func TestCreateAndMaintain(t *testing.T) {
 	store.Subscribe(events)
 
 	go func() {
-
-		if err := proxy.Delete(); err != nil {
-			t.Error("Failed to delete proxy: ", err)
+		err := proxy.Disable()
+		if err != nil {
+			t.Error("Failed to disable proxy: ", err)
 		}
 
 		assertZnodePresence(t, store, "/eph", false)
 
-		if err = proxy.Create(); err != nil {
-			t.Error("Failed to create proxy: ", err)
+		err = proxy.Enable()
+		if err != nil {
+			t.Error("Failed to enable proxy: ", err)
 		}
 
 		assertZnodePresence(t, store, "/eph", true)
 
-		if err := proxy.Delete(); err != nil {
-			t.Error("Failed to delete proxy: ", err)
+		err = proxy.Disable()
+		if err != nil {
+			t.Error("Failed to disable proxy: ", err)
 		}
 
 		println("waiting 10.5 seconds for zookeeper to purge an ephemeral node...")
 		time.Sleep(10500 * time.Millisecond)
 		println("re-establishing proxy")
 
-		if err = proxy.Create(); err != nil {
-			t.Error("Failed to create proxy: ", err)
+		err = proxy.Enable()
+		if err != nil {
+			t.Error("Failed to enable proxy: ", err)
 		}
 
 		// This is technically racy, but it's pretty safe to assume we'll complete before the writer, I think.
@@ -67,10 +69,10 @@ func TestCreateAndMaintain(t *testing.T) {
 		// TODO(burke): assert that this znode's ctime is less than a second ago.
 		assertZnodePresence(t, store, "/eph", true)
 
-		if err := proxy.Delete(); err != nil {
-			t.Error("Failed to delete proxy: ", err)
+		err = proxy.Disable()
+		if err != nil {
+			t.Error("Failed to disable proxy: ", err)
 		}
-
 	}()
 
 	assertEvent(t, events, session.SessionDisconnected)
