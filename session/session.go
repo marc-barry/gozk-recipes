@@ -149,7 +149,7 @@ func (s *ZKSession) manage() {
 				if err == nil {
 					s.mu.Lock()
 					if s.conn != nil {
-						err := zookeeper.Close()
+						err := s.conn.Close()
 						if err != nil {
 							s.log.Printf("error in closing existing zookeeper connection: %v", err)
 						}
