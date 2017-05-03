@@ -106,21 +106,21 @@ func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, c
 }
 
 func waitForConnection(events <-chan zookeeper.Event) error {
-  for {
-    select {
-    case event := <-events:
-      switch event.State {
-        case zookeeper.STATE_AUTH_FAILED, zookeeper.STATE_EXPIRED_SESSION, zookeeper.STATE_CLOSED:
-          return ErrZKSessionNotConnected
-        case zookeeper.STATE_CONNECTED:
-          return nil
-      }
-    case <-time.After(5 * time.Second):
-      return ErrZKSessionNotConnected
-    }
-  }
-  // We should not reach this state
-  return ErrZKSessionNotConnected
+	for {
+		select {
+		case event := <-events:
+			switch event.State {
+			case zookeeper.STATE_AUTH_FAILED, zookeeper.STATE_EXPIRED_SESSION, zookeeper.STATE_CLOSED:
+				return ErrZKSessionNotConnected
+			case zookeeper.STATE_CONNECTED:
+				return nil
+			}
+		case <-time.After(5 * time.Second):
+			return ErrZKSessionNotConnected
+		}
+	}
+	// We should not reach this state
+	return ErrZKSessionNotConnected
 }
 
 func (s *ZKSession) Subscribe(subscription chan<- ZKSessionEvent) {
@@ -148,6 +148,12 @@ func (s *ZKSession) manage() {
 				conn, events, err := zookeeper.Redial(s.servers, s.recvTimeout, s.clientID)
 				if err == nil {
 					s.mu.Lock()
+					if s.conn != nil {
+						err := s.conn.Close()
+						if err != nil {
+							s.log.Printf("error in closing existing zookeeper connection: %v", err)
+						}
+					}
 					s.conn = conn
 					s.events = events
 					s.clientID = conn.ClientId()
