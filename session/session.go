@@ -144,9 +144,11 @@ func (s *ZKSession) manage() {
 		case event := <-s.events:
 			switch event.State {
 			case zookeeper.STATE_EXPIRED_SESSION:
+				s.log.Printf("gozk-recipes/session: got STATE_EXPIRED_SESSION for conn %+v", s.conn)
 				expired = true
 				conn, events, err := zookeeper.Redial(s.servers, s.recvTimeout, s.clientID)
 				if err == nil {
+					s.log.Printf("gozk-recipes/session: STATE_EXPIRED_SESSION redialed conn %+v", conn)
 					s.mu.Lock()
 					if s.conn != nil {
 						err := s.conn.Close()
