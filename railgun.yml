@@ -1,0 +1,18 @@
+# https://dev-accel.shopify.io/dev/railgun/Railgun-Config
+name: gozk-recipes
+
+vm:
+  image:      /opt/dev/misc/railgun-images/default
+  ip_address: 192.168.64.87
+  memory: 2G
+  cores: 2
+
+volumes:
+  root:  '2G'
+
+services:
+  - toxiproxy
+  - zookeeper
+
+hostnames:
+  - gozk-recipes.myshopify.io

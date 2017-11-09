@@ -12,7 +12,7 @@ import (
 	"github.com/Shopify/gozk-recipes/lock"
 	"github.com/Shopify/gozk-recipes/session"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 const (

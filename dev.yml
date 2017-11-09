@@ -3,7 +3,7 @@ name: gozk-recipes
 up:
   - homebrew:
     - zookeeper
-  - go: 1.7.5
+  - go: 1.9.2
   - railgun
 
 env:
@@ -15,18 +15,6 @@ env:
 
 commands:
   test: script/test
-
-railgun:
-  image: dev:railgun-common-services-0.2.x
-  services:
-    toxiproxy: 8474
-    zookeeper: 2181
-  ip_address: 192.168.64.87
-  memory: 2G
-  cores: 2
-  disk: 2G
-  hostnames:
-    - gozk-recipes.myshopify.io
 
 packages:
   - git@github.com:Shopify/dev-shopify.git
