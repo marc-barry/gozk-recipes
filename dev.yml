@@ -3,7 +3,8 @@ name: gozk-recipes
 up:
   - homebrew:
     - zookeeper
-  - go: 1.9.2
+  - go:
+      version: 1.9
   - railgun
 
 env:
