@@ -4,11 +4,11 @@ name: gozk-recipes
 vm:
   image:      /opt/dev/misc/railgun-images/default
   ip_address: 192.168.64.87
-  memory: 2G
+  memory: 200M
   cores: 2
 
 volumes:
-  root:  '2G'
+  root:  '100M'
 
 services:
   - toxiproxy
