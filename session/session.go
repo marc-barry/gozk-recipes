@@ -153,7 +153,7 @@ func (s *ZKSession) manage() {
 					if s.conn != nil {
 						err := s.conn.Close()
 						if err != nil {
-							s.log.Printf("error in closing existing zookeeper connection: %v", err)
+							s.log.Printf("gozk-recipes/session: error in closing existing zookeeper connection: %v", err)
 						}
 					}
 					s.conn = conn
