@@ -15,6 +15,3 @@ env:
 
 commands:
   test: script/test
-
-packages:
-  - git@github.com:Shopify/dev-shopify.git
