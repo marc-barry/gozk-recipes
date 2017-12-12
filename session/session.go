@@ -97,6 +97,7 @@ func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, c
 
 	err = waitForConnection(events)
 	if err != nil {
+		_ = s.conn.Close()
 		return nil, err
 	}
 
