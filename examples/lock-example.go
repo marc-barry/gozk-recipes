@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -11,8 +12,6 @@ import (
 
 	"github.com/Shopify/gozk-recipes/lock"
 	"github.com/Shopify/gozk-recipes/session"
-
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -21,8 +20,6 @@ const (
 )
 
 var (
-	Log = logrus.New()
-
 	servers  = flag.String(ServersFlag, "localhost:2181", "The list of ZooKeeper servers.")
 	lockRoot = flag.String(LockRootFlag, "/gozk-recipes", "The path to the parent leader node.")
 
@@ -38,7 +35,7 @@ func withLogging(f func()) {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("Recovered from panic(%+v)", r)
 
-			Log.WithField("error", err).Panicf("Stopped with panic: %s", err.Error())
+			log.Fatalf("stopped with error %s", err)
 		}
 	}()
 
@@ -50,9 +47,9 @@ func main() {
 
 	stopWg.Add(1)
 
-	sess, err := session.NewZKSession(*servers, time.Second*1, Log)
+	sess, err := session.NewZKSession(*servers, time.Second*1, log.Default())
 	if err != nil {
-		Log.WithField("error", err).Fatalf("Couldn't establish a session with a ZooKeeper server.")
+		log.Fatalf("Couldn't establish a session with a ZooKeeper server. %s", err)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -61,7 +58,7 @@ func main() {
 		var once sync.Once
 
 		for sig := range c {
-			Log.WithField("signal", sig).Infof("Signalled. Shutting down.")
+			log.Printf("Signalled. Shutting down. Signal: %v", sig)
 
 			once.Do(func() {
 				stop(sess)
@@ -69,7 +66,7 @@ func main() {
 		}
 	}()
 
-	Log.Info("Session created.")
+	log.Printf("Session created.")
 
 	go withLogging(func() {
 		start(sess)
@@ -83,7 +80,7 @@ func start(sess *session.ZKSession) {
 
 	gl, err = lock.NewGlobalLock(sess, *lockRoot, "")
 	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't create lock.")
+		log.Fatalf("Couldn't create lock. %s", err)
 		return
 	}
 
@@ -97,23 +94,23 @@ func start(sess *session.ZKSession) {
 			case event := <-events:
 				switch event {
 				case session.SessionClosed:
-					Log.WithField("event", "closed").Infof("The session was closed.")
+					log.Printf("The session was closed.")
 				case session.SessionDisconnected:
-					Log.WithField("event", "disconnected").Infof("The session was disconnected.")
+					log.Printf("The session was disconnected.")
 				case session.SessionReconnected:
-					Log.WithField("event", "reconnected").Infof("The session was reconnected.")
+					log.Printf("The session was reconnected.")
 					lockedMu.Lock()
-					Log.WithField("event", "reconnected").Infof("Previous lock state: %v", locked)
+					log.Printf("Previous lock state: %v", locked)
 					lockedMu.Unlock()
 					getLock()
 				case session.SessionExpiredReconnected:
-					Log.WithField("event", "expired reconnected").Infof("The session was expired and reconnected.")
+					log.Printf("The session was expired and reconnected.")
 					lockedMu.Lock()
-					Log.WithField("event", "expired reconnected").Infof("Previous lock state: %v", locked)
+					log.Printf("Previous lock state: %v", locked)
 					lockedMu.Unlock()
 					getLock()
 				case session.SessionFailed:
-					Log.WithField("event", "failed session").Errorf("The session failed.")
+					log.Printf("The session failed.")
 					stop(sess)
 				}
 			}
@@ -125,17 +122,17 @@ func getLock() {
 	defer lockedMu.Unlock()
 	lockedMu.Lock()
 
-	Log.Infof("Trying to lock.")
+	log.Printf("Trying to lock.")
 
 	locked = false
 
 	err := gl.Lock()
 	if err == nil {
 		locked = true
-		Log.Infof("Lock obtained.")
+		log.Printf("Lock obtained.")
 	}
 	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't obtain lock.")
+		log.Fatalf("Couldn't obtain lock. %s", err)
 	}
 }
 
@@ -145,23 +142,23 @@ func stop(sess *session.ZKSession) {
 	if gl != nil {
 		err := gl.Unlock()
 		if err == nil {
-			Log.Infof("Lock released.")
+			log.Printf("Lock released.")
 		}
 		if err != nil {
-			Log.WithField("error", err).Errorf("Couldn't release lock.")
+			log.Printf("Couldn't release lock. %s", err)
 		}
 
 		err = gl.Destroy()
 		if err != nil {
-			Log.WithField("error", err).Errorf("Couldn't destroy lock.")
+			log.Printf("Couldn't destroy lock. %s", err)
 		}
 	}
 
 	err := sess.Close()
 	if err == nil {
-		Log.Infof("Session closed.")
+		log.Print("Session closed.")
 	}
 	if err != nil {
-		Log.WithField("error", err).Errorf("Couldn't close session.")
+		log.Printf("Couldn't close session. %s", err)
 	}
 }

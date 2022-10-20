@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	toxiproxy "github.com/Shopify/toxiproxy/client"
+	toxiproxy "github.com/Shopify/toxiproxy/v2/client"
 )
 
 const PROXY_PORT = "27445"
