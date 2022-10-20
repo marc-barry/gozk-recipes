@@ -1,17 +1,25 @@
 name: gozk-recipes
 
 up:
+  - isogun
   - homebrew:
-    - zookeeper
-  - go: 1.9.2
-  - railgun
+    - shopify/shopify/libzookeeper
+    - shopify/shopify/libzookeeper
+  - go:
+      version: 1.17.5
+      modules: true
 
 env:
-  CGO_CFLAGS: '-I/usr/local/include/zookeeper'
-  CGO_LDFLAGS: '-L/usr/local/lib'
   TOXIPROXY_HOST: 192.168.64.87
   TOXIPROXY_URL: http://192.168.64.87:8474
   ZOOKEEPERS: 192.168.64.87:2181
 
+  # Set CGO flags for finding zookeeper libraries on MacOS X with homebrew.
+  # If your zookeeper headers are in a different location, i.e. you don't use
+  # homebrew, update these flags accordingly.
+  CGO_CFLAGS: '-I/opt/homebrew/include/zookeeper -DTHREADED'
+  CGO_LDFLAGS: '-L/opt/homebrew/lib'
+
 commands:
   test: script/test
+  lint: golangci-lint run
