@@ -34,8 +34,8 @@ dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/toml v1.1.0/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/Shopify/gozk v0.0.0-20191029122301-2db116daa9ae h1:5oG1mg4gfOqOr+lDOt6nVFz3hv4YIFlqmu09tO9pD4w=
-github.com/Shopify/gozk v0.0.0-20191029122301-2db116daa9ae/go.mod h1:e31sc2lQYDH5MrqjXZ7iR/0Kz+N4ZzSYsevEayJW7ik=
+github.com/Shopify/gozk v0.0.0-20221028154422-a2c06c04a485 h1:FIqQxfwDYGnmk++h0qzB4IoV8fi07xSKdaSIRUcTwks=
+github.com/Shopify/gozk v0.0.0-20221028154422-a2c06c04a485/go.mod h1:NuaKWEXfjsZqrUFTobqoUfBO7z7am3OZpH1qsHuqhqs=
 github.com/Shopify/toxiproxy/v2 v2.5.0 h1:i4LPT+qrSlKNtQf5QliVjdP08GyAH8+BUIc9gT0eahc=
 github.com/Shopify/toxiproxy/v2 v2.5.0/go.mod h1:yhM2epWtAmel9CB8r2+L+PCmhH6yH2pITaPAo7jxJl0=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
