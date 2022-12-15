@@ -1,6 +1,7 @@
 package session
 
 import (
+	"log"
 	"testing"
 	"time"
 
@@ -75,7 +76,7 @@ func TestResumeZKSessionWithValidSession(t *testing.T) {
 	proxy := test.CreateProxy(t)
 	defer proxy.Delete()
 
-	store, err := NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, nil)
+	store, err := NewZKSession(test.GetToxiProxyHost(t)+":"+test.PROXY_PORT, 200*time.Millisecond, log.Default())
 	if err != nil {
 		t.Error("Failed to connect to Zookeeper: ", err)
 	}

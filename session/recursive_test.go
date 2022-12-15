@@ -1,33 +1,20 @@
 package session
 
 import (
-	"reflect"
-	"sort"
 	"testing"
 	"time"
 
-	"github.com/Shopify/gozk"
+	zookeeper "github.com/Shopify/gozk"
 	"github.com/Shopify/gozk-recipes/test"
+	"github.com/stretchr/testify/assert"
 )
-
-func AssertEqual(t *testing.T, expected, actual interface{}) {
-	switch expected.(type) {
-	case []string:
-		sort.Strings(expected.([]string))
-		sort.Strings(actual.([]string))
-	}
-
-	if !reflect.DeepEqual(expected, actual) {
-		t.Errorf("Expected %s, actual %s", expected, actual)
-	}
-}
 
 func AssertNodeValueEqual(t *testing.T, session *ZKSession, path, expected string) {
 	data, _, err := session.Get(path)
 	if err != nil {
 		t.Error("Get error: ", err)
 	}
-	AssertEqual(t, expected, data)
+	assert.Equal(t, expected, data)
 }
 
 func AssertNodeDoesNotExist(t *testing.T, session *ZKSession, path string) {
@@ -89,7 +76,7 @@ func TestChildrenRecursiveWithNonExistingNodeShouldHaveEmptyResult(t *testing.T)
 			t.Error("ChildrenRecursive error: ", err)
 		}
 
-		AssertEqual(t, []string{}, children)
+		assert.ElementsMatch(t, []string{}, children)
 	})
 }
 
@@ -103,7 +90,7 @@ func TestChildrenRecursiveWithNodesShouldHaveResult(t *testing.T) {
 			t.Error("ChildrenRecursive error: ", err)
 		}
 
-		AssertEqual(t, nodes[1:], children)
+		assert.ElementsMatch(t, nodes[1:], children)
 	})
 }
 
@@ -117,7 +104,7 @@ func TestChildrenRecursiveWithLimitedDepthShouldReturnSubset(t *testing.T) {
 			t.Error("ChildrenRecursive error: ", err)
 		}
 
-		AssertEqual(t, []string{"/test/foo", "/test/bar", "/test/bar/eggs"}, children)
+		assert.ElementsMatch(t, []string{"/test/foo", "/test/bar", "/test/bar/eggs"}, children)
 	})
 }
 

@@ -2,10 +2,12 @@ package session
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/Shopify/gozk"
+	zookeeper "github.com/Shopify/gozk"
 )
 
 type ZKSessionEvent uint
@@ -45,65 +47,60 @@ const (
 	// SessionFailed indicates that the session failed unrecoverably. This may mean incorrect credentials, or broken quorum,
 	// or a partition from the entire ZooKeeper cluster, or any other mode of absolute failure.
 	SessionFailed
+
+	DefaultRecvTimeout = 5 * time.Second
 )
 
-type ZKSession struct {
-	servers     string
+type SessionOpts struct {
 	recvTimeout time.Duration
-	conn        *zookeeper.Conn
+	logger      stdLogger
 	clientID    *zookeeper.ClientId
-	events      <-chan zookeeper.Event
-	mu          sync.Mutex
-
-	subscriptions []chan<- ZKSessionEvent
-	log           stdLogger
+	servers     []string
+	dnsRefresh  time.Duration
 }
 
-func ResumeZKSession(servers string, recvTimeout time.Duration, logger stdLogger, clientId *zookeeper.ClientId) (*ZKSession, error) {
-	return newZKSession(servers, recvTimeout, logger, clientId)
-}
-
-func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (*ZKSession, error) {
-	return newZKSession(servers, recvTimeout, logger, nil)
-}
-
-func newZKSession(servers string, recvTimeout time.Duration, logger stdLogger, clientId *zookeeper.ClientId) (*ZKSession, error) {
+// Create initializes a new session with the settings in s.
+func (s SessionOpts) Create() (*ZKSession, error) {
 	var conn *zookeeper.Conn
 	var events <-chan zookeeper.Event
 	var err error
 
-	if clientId == nil {
-		conn, events, err = zookeeper.Dial(servers, recvTimeout)
-	} else {
-		conn, events, err = zookeeper.Redial(servers, recvTimeout, clientId)
+	if len(s.servers) == 0 {
+		return nil, fmt.Errorf("no zookeeper servers specified")
 	}
+
+	servers := strings.Join(s.servers, ",")
+	if s.clientID == nil {
+		conn, events, err = zookeeper.Dial(servers, s.recvTimeout)
+	} else {
+		conn, events, err = zookeeper.Redial(servers, s.recvTimeout, s.clientID)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	if logger == nil {
-		logger = &nullLogger{}
-	}
+	conn.SetServersResolutionDelay(s.dnsRefresh)
 
-	s := &ZKSession{
+	session := &ZKSession{
 		servers:       servers,
-		recvTimeout:   recvTimeout,
+		recvTimeout:   s.recvTimeout,
 		conn:          conn,
 		clientID:      conn.ClientId(),
 		events:        events,
 		subscriptions: make([]chan<- ZKSessionEvent, 0),
-		log:           logger,
+		log:           s.logger,
 	}
 
 	err = waitForConnection(events)
 	if err != nil {
-		_ = s.conn.Close()
-		return nil, err
+		_ = session.conn.Close()
+		return nil, fmt.Errorf("waiting for initial connection: %w", err)
 	}
+	server, _ := session.CurrentServer()
+	s.logger.Printf("session established with %s", server)
 
-	go s.manage()
-
-	return s, nil
+	return session, nil
 }
 
 func waitForConnection(events <-chan zookeeper.Event) error {
@@ -120,8 +117,109 @@ func waitForConnection(events <-chan zookeeper.Event) error {
 			return ErrZKSessionNotConnected
 		}
 	}
-	// We should not reach this state
-	return ErrZKSessionNotConnected
+}
+
+type SessionOpt func(SessionOpts) SessionOpts
+
+// WithRecvTimeout creates a session with the given timeout.
+func WithRecvTimeout(timeout time.Duration) SessionOpt {
+	return func(so SessionOpts) SessionOpts {
+		so.recvTimeout = timeout
+		return so
+	}
+}
+
+// WithLogger creates a session with the given logger.
+func WithLogger(logger stdLogger) SessionOpt {
+	return func(so SessionOpts) SessionOpts {
+		// Maintain backwards compatibility
+		if logger == nil {
+			logger = &nullLogger{}
+		}
+		so.logger = logger
+		return so
+	}
+}
+
+// WithZookeepers creates a session with the given zookeeper hosts.
+func WithZookeepers(zookeepers []string) SessionOpt {
+	return func(so SessionOpts) SessionOpts {
+		so.servers = zookeepers
+		return so
+	}
+}
+
+// WithZookeeperClientID creates a session with the given client ID.
+func WithZookeeperClientID(id *zookeeper.ClientId) SessionOpt {
+	return func(so SessionOpts) SessionOpts {
+		so.clientID = id
+		return so
+	}
+}
+
+// WithZookeeperClientID creates a session with periodic DNS refresh enabled.
+func WithDNSRefresh(duration time.Duration) SessionOpt {
+	return func(so SessionOpts) SessionOpts {
+		so.dnsRefresh = duration
+		return so
+	}
+}
+
+type ZKSession struct {
+	servers     string
+	recvTimeout time.Duration
+	conn        *zookeeper.Conn
+	clientID    *zookeeper.ClientId
+	events      <-chan zookeeper.Event
+	mu          sync.Mutex
+
+	subscriptions []chan<- ZKSessionEvent
+	log           stdLogger
+}
+
+func ResumeZKSession(servers string, recvTimeout time.Duration, logger stdLogger, clientId *zookeeper.ClientId) (*ZKSession, error) {
+	return NewSessionWithOpts(
+		WithLogger(logger),
+		WithZookeepers(strings.Split(servers, ",")),
+		WithRecvTimeout(recvTimeout),
+		WithZookeeperClientID(clientId),
+	)
+}
+
+func NewSessionWithOpts(opts ...SessionOpt) (*ZKSession, error) {
+	sessionOpts := SessionOpts{
+		logger:      &nullLogger{},
+		recvTimeout: DefaultRecvTimeout,
+	}
+
+	for _, so := range opts {
+		sessionOpts = so(sessionOpts)
+	}
+
+	session, err := sessionOpts.Create()
+	if err != nil {
+		return nil, fmt.Errorf("creating zookeeper session: %w", err)
+	}
+
+	go session.manage()
+
+	return session, nil
+}
+
+func NewZKSession(servers string, recvTimeout time.Duration, logger stdLogger) (*ZKSession, error) {
+	return NewSessionWithOpts(
+		WithLogger(logger),
+		WithZookeepers(strings.Split(servers, ",")),
+		WithRecvTimeout(recvTimeout),
+	)
+}
+
+func (s *ZKSession) CurrentServer() (string, error) {
+	return s.conn.CurrentServer()
+}
+
+func (s *ZKSession) SetServersResolutionDelay(delay time.Duration) {
+	s.conn.SetServersResolutionDelay(delay)
 }
 
 func (s *ZKSession) Subscribe(subscription chan<- ZKSessionEvent) {
